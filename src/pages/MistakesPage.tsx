@@ -217,8 +217,8 @@ export default function MistakesPage() {
     navigate(`/mistakes/review/${type}`);
   };
 
-  const handleSingleReview = (questionId: string) => {
-    navigate(`/practice/${questionId}`);
+  const handleSingleReview = (questionId: string, reportId: string) => {
+    navigate(`/practice/${questionId}?reportId=${reportId}`);
   };
 
   if (totalMistakes === 0) {
@@ -531,7 +531,7 @@ export default function MistakesPage() {
                             variant="primary"
                             size="sm"
                             leftIcon={<PlayCircle className="w-4 h-4" />}
-                            onClick={() => handleSingleReview(item.questionId)}
+                            onClick={() => handleSingleReview(item.questionId, item.reportId)}
                           >
                             单题重做
                           </Button>

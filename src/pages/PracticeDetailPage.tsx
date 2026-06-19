@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Send, AlertCircle } from 'lucide-react';
 import {
   getQuestionById,
@@ -99,13 +99,22 @@ function renderDifficultyStars(difficulty: PracticeQuestion['difficulty']) {
 export default function PracticeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const submitAnswer = useAppStore((state) => state.submitAnswer);
 
   const question = getQuestionById(id || '');
 
-  const [selectedReportId, setSelectedReportId] = useState<string>(
-    question?.reports[0]?.id || ''
-  );
+  const initialReportId = useMemo(() => {
+    if (!question) return '';
+    const params = new URLSearchParams(location.search);
+    const reportIdFromUrl = params.get('reportId');
+    if (reportIdFromUrl && question.reports.some(r => r.id === reportIdFromUrl)) {
+      return reportIdFromUrl;
+    }
+    return question.reports[0]?.id || '';
+  }, [question, location.search]);
+
+  const [selectedReportId, setSelectedReportId] = useState<string>(initialReportId);
   const [selectedTendency, setSelectedTendency] = useState<MediaTendency | ''>('');
   const [selectedBasis, setSelectedBasis] = useState<BasisOption[]>([]);
   const [selectedAffectedGroups, setSelectedAffectedGroups] = useState<AffectedGroup[]>([]);
@@ -144,17 +153,22 @@ export default function PracticeDetailPage() {
       selectedAffectedGroups,
     };
 
-    const { score, isCorrect } = calculateScore(userAnswerInput, question);
+    const { score, isCorrect, correctTendency } = calculateScore(
+      userAnswerInput,
+      question,
+      selectedReport
+    );
     const confusionType = classifyConfusion(
       selectedTendency,
-      question.correctTendency,
+      correctTendency,
       selectedBasis,
-      question
+      selectedReport
     );
 
     const answer: UserAnswer = {
       questionId: question.id,
       reportId: selectedReportId,
+      correctTendency,
       selectedTendency,
       selectedBasis,
       selectedAffectedGroups,
@@ -166,7 +180,7 @@ export default function PracticeDetailPage() {
 
     submitAnswer(answer);
 
-    navigate(`/analysis/${question.id}`, {
+    navigate(`/analysis/${question.id}?reportId=${selectedReportId}`, {
       state: {
         reportId: selectedReportId,
         userAnswer: answer,

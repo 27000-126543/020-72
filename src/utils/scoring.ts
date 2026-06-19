@@ -4,6 +4,7 @@ import type {
   AffectedGroup,
   ConfusionType,
   PracticeQuestion,
+  MediaReport,
 } from '../data/types';
 
 export function jaccard<T>(a: T[], b: T[]): number {
@@ -18,6 +19,7 @@ export function jaccard<T>(a: T[], b: T[]): number {
 export interface ScoreResult {
   score: number;
   isCorrect: boolean;
+  correctTendency: MediaTendency;
 }
 
 export function calculateScore(
@@ -27,9 +29,11 @@ export function calculateScore(
     selectedAffectedGroups: AffectedGroup[];
   },
   question: PracticeQuestion,
+  report: MediaReport,
 ): ScoreResult {
+  const correctTendency = report.overallTendency;
   const tendencyScore =
-    userAnswer.selectedTendency === question.correctTendency ? 40 : 0;
+    userAnswer.selectedTendency === correctTendency ? 40 : 0;
 
   const basisScore = Math.round(
     jaccard(userAnswer.selectedBasis, question.correctBasis) * 35,
@@ -45,22 +49,21 @@ export function calculateScore(
   const score = tendencyScore + basisScore + groupScore;
   const isCorrect = tendencyScore === 40;
 
-  return { score, isCorrect };
+  return { score, isCorrect, correctTendency };
 }
 
 export function classifyConfusion(
   selectedTendency: MediaTendency,
   correctTendency: MediaTendency,
   selectedBasis: BasisOption[],
-  question: PracticeQuestion,
+  report: MediaReport,
 ): ConfusionType | undefined {
   if (selectedTendency === correctTendency) {
     return undefined;
   }
 
-  const hasSource = question.reports.some(
-    (r) => r.sourceStandpoint && r.sourceStandpoint.trim().length > 0,
-  );
+  const hasSource =
+    report.sourceStandpoint && report.sourceStandpoint.trim().length > 0;
   const basisHasSource = selectedBasis.includes('source');
   const basisHasWording = selectedBasis.includes('wording');
 

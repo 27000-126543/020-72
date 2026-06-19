@@ -19,6 +19,8 @@ import {
   FileText,
   Target,
   Lightbulb,
+  AlertCircle,
+  PlayCircle,
 } from 'lucide-react';
 import {
   getQuestionById,
@@ -167,7 +169,6 @@ function ComparisonCol({
   tendency: MediaTendency;
   basis: BasisOption[];
   groups: AffectedGroup[];
-  wrong?: boolean;
   icon: React.ReactNode;
 }) {
   const isWrong = variant === 'user';
@@ -262,17 +263,65 @@ export default function AnalysisPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as AnalysisLocationState | null;
+  const answers = useAppStore((s) => s.answers);
   const mistakes = useAppStore((s) => s.mistakes);
   const clearMistake = useAppStore((s) => s.clearMistake);
 
   const question = getQuestionById(id || '');
 
-  const { reportId, userAnswer, score, isCorrect } = state || {};
-  const fallbackReportId = question?.reports[0]?.id || '';
-  const currentReportId = reportId || fallbackReportId;
-
-  const [selectedReportId, setSelectedReportId] = useState<string>(currentReportId);
   const [addedToMistakes, setAddedToMistakes] = useState(false);
+
+  const locatedAnswer = useMemo(() => {
+    if (!question) return null;
+
+    if (state?.userAnswer && state?.reportId) {
+      return {
+        userAnswer: state.userAnswer,
+        reportId: state.reportId,
+        score: state.score,
+        isCorrect: state.isCorrect,
+      };
+    }
+
+    let reportIdFromState = state?.reportId;
+    if (!reportIdFromState) {
+      const params = new URLSearchParams(location.search);
+      const reportIdFromUrl = params.get('reportId');
+      if (reportIdFromUrl && question.reports.some(r => r.id === reportIdFromUrl)) {
+        reportIdFromState = reportIdFromUrl;
+      }
+    }
+    if (!reportIdFromState) {
+      const lastAnswerForQuestion = [...answers]
+        .filter((a) => a.questionId === question.id)
+        .sort((a, b) => b.answeredAt - a.answeredAt)[0];
+      if (lastAnswerForQuestion) {
+        reportIdFromState = lastAnswerForQuestion.reportId;
+      }
+    }
+
+    if (!reportIdFromState) return null;
+
+    const lastAnswer = [...answers]
+      .filter(
+        (a) => a.questionId === question.id && a.reportId === reportIdFromState
+      )
+      .sort((a, b) => b.answeredAt - a.answeredAt)[0];
+
+    if (!lastAnswer) return null;
+
+    return {
+      userAnswer: lastAnswer,
+      reportId: reportIdFromState,
+      score: lastAnswer.score,
+      isCorrect: lastAnswer.isCorrect,
+    };
+  }, [question, state, answers, location.search]);
+
+  const currentReportId = locatedAnswer?.reportId || question?.reports[0]?.id || '';
+  const selectedReport = question?.reports.find((r) => r.id === currentReportId);
+
+  const [selectedReportTab, setSelectedReportTab] = useState<string>(currentReportId);
 
   const radarDatasets = useMemo(() => {
     if (!question) return [];
@@ -318,19 +367,67 @@ export default function AnalysisPage() {
     );
   }
 
-  const displayUserAnswer: UserAnswer = userAnswer || {
-    questionId: question.id,
-    reportId: currentReportId,
-    selectedTendency: question.correctTendency,
-    selectedBasis: question.correctBasis,
-    selectedAffectedGroups: question.correctAffectedGroups,
-    isCorrect: true,
-    score: 100,
-    answeredAt: Date.now(),
-  };
+  if (!locatedAnswer || !selectedReport) {
+    return (
+      <div className="space-y-6">
+        <nav className="flex items-center gap-2 text-sm">
+          <Link
+            to="/practice"
+            className="text-primary-500 hover:text-primary-700 transition-colors"
+          >
+            案例练习
+          </Link>
+          <ChevronRight className="w-4 h-4 text-primary-300" />
+          <Link
+            to={`/practice/${question.id}`}
+            className="text-primary-500 hover:text-primary-700 transition-colors truncate"
+          >
+            {question.title}
+          </Link>
+          <ChevronRight className="w-4 h-4 text-primary-300" />
+          <span className="text-primary-700 font-medium">答案解析</span>
+        </nav>
 
-  const displayScore = typeof score === 'number' ? score : 100;
-  const displayIsCorrect = typeof isCorrect === 'boolean' ? isCorrect : true;
+        <Card className="border-2 border-accent-200 bg-gradient-to-br from-accent-50/40 via-white to-white">
+          <CardContent className="p-8 lg:p-10">
+            <div className="flex flex-col lg:flex-row items-center gap-8">
+              <div className="w-24 h-24 shrink-0 rounded-2xl bg-gradient-to-br from-accent-100 to-accent-200 flex items-center justify-center">
+                <AlertCircle className="w-12 h-12 text-accent-600" />
+              </div>
+              <div className="flex-1 text-center lg:text-left">
+                <h2 className="text-2xl font-bold text-accent-700 mb-3">
+                  请先完成练习再查看解析
+                </h2>
+                <p className="text-primary-600 leading-relaxed max-w-xl mb-6">
+                  该页面需要对应的答题记录才能显示解析内容。可能的原因：你还没有完成这道题的作答，或者通过复制链接直接打开导致答题记录丢失。
+                </p>
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={() => navigate(`/practice/${question.id}`)}
+                    leftIcon={<PlayCircle className="w-4 h-4" />}
+                  >
+                    去完成练习
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate('/practice')}
+                    leftIcon={<List className="w-4 h-4" />}
+                  >
+                    浏览其他题目
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const { userAnswer, score, isCorrect } = locatedAnswer;
+  const correctTendency = selectedReport.overallTendency;
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -355,17 +452,17 @@ export default function AnalysisPage() {
       <Card
         className={cn(
           'border-2',
-          displayIsCorrect
+          isCorrect
             ? 'border-green-200 bg-gradient-to-br from-green-50/50 via-white to-white'
             : 'border-red-200 bg-gradient-to-br from-red-50/50 via-white to-white'
         )}
       >
         <CardContent className="p-6 lg:p-8">
           <div className="flex flex-col lg:flex-row items-center gap-8">
-            <RingScore score={displayScore} size={140} strokeWidth={12} />
+            <RingScore score={score} size={140} strokeWidth={12} />
             <div className="flex-1 text-center lg:text-left">
               <div className="flex items-center justify-center lg:justify-start gap-2 mb-2">
-                {displayIsCorrect ? (
+                {isCorrect ? (
                   <CheckCircle2 className="w-7 h-7 text-green-500" />
                 ) : (
                   <XCircle className="w-7 h-7 text-red-500" />
@@ -373,31 +470,31 @@ export default function AnalysisPage() {
                 <h2
                   className={cn(
                     'text-2xl font-bold',
-                    displayIsCorrect ? 'text-green-700' : 'text-red-700'
+                    isCorrect ? 'text-green-700' : 'text-red-700'
                   )}
                 >
-                  {displayIsCorrect
-                    ? displayScore >= 90
+                  {isCorrect
+                    ? score >= 90
                       ? '完美！分析非常准确'
                       : '回答正确！倾向判断准确'
                     : '需要加强，倾向判断有误'}
                 </h2>
               </div>
               <p className="text-primary-600 leading-relaxed max-w-xl">
-                {displayIsCorrect
-                  ? displayScore >= 90
-                    ? '你对该报道的倾向判断及依据分析都非常到位，展现了扎实的媒体素养。继续保持！'
-                    : `倾向判断正确，总分 ${displayScore} 分。可以进一步优化判断依据和影响人群的识别，让分析更全面。`
-                  : `正确答案是「${TENDENCY_LABELS[question.correctTendency]}」。下方有详细的逐句标注和判定依据拆解，帮助你理解误判原因。`}
+                {isCorrect
+                  ? score >= 90
+                    ? `你对${selectedReport.mediaName}报道的倾向判断及依据分析都非常到位，展现了扎实的媒体素养。继续保持！`
+                    : `倾向判断正确，总分 ${score} 分。可以进一步优化判断依据和影响人群的识别，让分析更全面。`
+                  : `这篇${selectedReport.mediaName}报道的正确倾向是「${TENDENCY_LABELS[correctTendency]}」，而你选择了「${TENDENCY_LABELS[userAnswer.selectedTendency]}」。下方有详细的逐句标注和判定依据拆解，帮助你理解误判原因。`}
               </p>
               <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 mt-4">
                 <Chip variant="solid" color="primary">
                   {CATEGORY_LABELS[question.category]}
                 </Chip>
-                <TendencyTag
-                  tendency={question.correctTendency}
-                  size="md"
-                />
+                <Chip variant="outline" color="primary">
+                  {selectedReport.mediaName}
+                </Chip>
+                <TendencyTag tendency={correctTendency} size="md" />
                 <span className="text-xs text-primary-500">
                   本题共 {question.reports.length} 篇报道
                 </span>
@@ -414,7 +511,7 @@ export default function AnalysisPage() {
             答题回顾 vs 正确答案
           </CardTitle>
           <p className="text-sm text-primary-500">
-            对比你的作答与正确答案，找出差异
+            对比你的作答与该报道的正确答案，找出差异
           </p>
         </CardHeader>
         <CardContent>
@@ -422,9 +519,9 @@ export default function AnalysisPage() {
             <ComparisonCol
               title="你的作答"
               variant="user"
-              tendency={displayUserAnswer.selectedTendency}
-              basis={displayUserAnswer.selectedBasis}
-              groups={displayUserAnswer.selectedAffectedGroups}
+              tendency={userAnswer.selectedTendency}
+              basis={userAnswer.selectedBasis}
+              groups={userAnswer.selectedAffectedGroups}
               icon={
                 <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
                   <XCircle className="w-4 h-4 text-red-500" />
@@ -437,9 +534,9 @@ export default function AnalysisPage() {
               </div>
             </div>
             <ComparisonCol
-              title="正确答案"
+              title={`${selectedReport.mediaName}的正确倾向`}
               variant="correct"
-              tendency={question.correctTendency}
+              tendency={correctTendency}
               basis={question.correctBasis}
               groups={question.correctAffectedGroups}
               icon={
@@ -463,7 +560,7 @@ export default function AnalysisPage() {
           </p>
         </CardHeader>
         <CardContent>
-          <Tabs value={selectedReportId} onValueChange={setSelectedReportId}>
+          <Tabs value={selectedReportTab} onValueChange={setSelectedReportTab}>
             <TabsList className="flex-wrap">
               {question.reports.map((report) => (
                 <TabsTrigger
@@ -497,7 +594,7 @@ export default function AnalysisPage() {
             判定依据拆解
           </CardTitle>
           <p className="text-sm text-primary-500">
-            为什么正确答案是「{TENDENCY_LABELS[question.correctTendency]}」？
+            为什么「{selectedReport.mediaName}」的报道是「{TENDENCY_LABELS[correctTendency]}」倾向？
           </p>
         </CardHeader>
         <CardContent>
@@ -629,7 +726,7 @@ export default function AnalysisPage() {
               </Button>
             </div>
 
-            {!displayIsCorrect && !isInMistakes && (
+            {!isCorrect && !isInMistakes && (
               <Button
                 variant="accent"
                 onClick={handleAddToMistakes}
@@ -641,7 +738,7 @@ export default function AnalysisPage() {
                 {addedToMistakes ? '已加入错题本' : '加入错题本'}
               </Button>
             )}
-            {!displayIsCorrect && isInMistakes && (
+            {!isCorrect && isInMistakes && (
               <Chip variant="solid" color="accent" className="h-9 px-3">
                 <BookMarked className="w-4 h-4 fill-current" />
                 已在错题本中

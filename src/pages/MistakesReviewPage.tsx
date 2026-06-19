@@ -174,25 +174,27 @@ export default function MistakesReviewPage() {
     const dummyBasis: BasisOption[] = ["wording"];
     const dummyGroups: AffectedGroup[] = ["public"];
 
-    const { score } = calculateScore(
+    const { score, correctTendency } = calculateScore(
       {
         selectedTendency,
         selectedBasis: dummyBasis,
         selectedAffectedGroups: dummyGroups,
       },
-      question
+      question,
+      report
     );
 
     const confusionType = classifyConfusion(
       selectedTendency,
       report.overallTendency,
       dummyBasis,
-      question
+      report
     );
 
     const newAnswer: UserAnswer = {
       questionId: question.id,
       reportId: report.id,
+      correctTendency,
       selectedTendency,
       selectedBasis: dummyBasis,
       selectedAffectedGroups: dummyGroups,

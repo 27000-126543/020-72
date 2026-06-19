@@ -34,13 +34,39 @@ function splitTextByAnnotations(
   text: string,
   annotations: SentenceAnnotation[]
 ): SentenceSegment[] {
-  if (annotations.length === 0) {
+  if (annotations.length === 0 || !text) {
     return [{ text }];
   }
 
-  const sorted = [...annotations].sort(
-    (a, b) => a.startIndex - b.startIndex
+  const hasValidPositions = annotations.some(
+    (a) => a.startIndex > 0 || a.endIndex > 0
   );
+
+  let sorted: SentenceAnnotation[];
+
+  if (hasValidPositions) {
+    sorted = [...annotations]
+      .filter((a) => a.startIndex >= 0 && a.endIndex <= text.length)
+      .sort((a, b) => a.startIndex - b.startIndex);
+  } else {
+    const found: SentenceAnnotation[] = [];
+    for (const ann of annotations) {
+      const idx = text.indexOf(ann.text);
+      if (idx !== -1) {
+        found.push({
+          ...ann,
+          startIndex: idx,
+          endIndex: idx + ann.text.length,
+        });
+      }
+    }
+    sorted = found.sort((a, b) => a.startIndex - b.startIndex);
+  }
+
+  if (sorted.length === 0) {
+    return [{ text }];
+  }
+
   const segments: SentenceSegment[] = [];
   let cursor = 0;
 
@@ -100,12 +126,11 @@ export default function ReportViewer({
   const renderSegments = (text: string) => {
     if (!showAnnotations) return text;
 
-    const segs = splitTextByAnnotations(
-      text,
-      report.sentenceAnnotations.filter(
-        (a) => a.startIndex >= 0 && a.startIndex < text.length
-      )
+    const matchingAnnotations = report.sentenceAnnotations.filter((a) =>
+      text.includes(a.text)
     );
+
+    const segs = splitTextByAnnotations(text, matchingAnnotations);
 
     return segs.map((seg, idx) => {
       if (!seg.annotation) {
@@ -190,7 +215,7 @@ export default function ReportViewer({
       <div className="p-6 lg:p-8" onMouseMove={handleMouseMove}>
         <article className="newspaper max-w-none">
           <h2 className="font-serif text-2xl lg:text-3xl font-bold text-primary-900 leading-tight mb-5 text-balance">
-            {report.headline}
+            {renderSegments(report.headline)}
           </h2>
 
           <p className="font-serif italic text-lg text-primary-700 leading-relaxed mb-6 pb-6 border-b border-paper-300/50">

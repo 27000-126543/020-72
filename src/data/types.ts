@@ -81,6 +81,7 @@ export interface PracticeQuestion {
 export interface UserAnswer {
   questionId: string;
   reportId: string;
+  correctTendency: MediaTendency;
   selectedTendency: MediaTendency;
   selectedBasis: BasisOption[];
   selectedAffectedGroups: AffectedGroup[];
