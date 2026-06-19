@@ -4,6 +4,7 @@ import { Calendar, Tag, Info, MessageSquare, PenLine, StickyNote } from "lucide-
 import type { MediaReport, MediaTendency, SentenceAnnotation, NoteRecord } from "@/data/types";
 import { TENDENCY_COLORS, TENDENCY_LABELS } from "@/data/types";
 import { cn } from "@/lib/utils";
+import { buildNoteKey } from "@/store/useAppStore";
 
 interface ReportViewerProps {
   report: MediaReport;
@@ -177,12 +178,12 @@ export default function ReportViewer({
   );
 
   const hoveredNote = hoveredAnnotation && questionId
-    ? notes[`${questionId}_${report.id}_${hoveredAnnotation.id}`]
+    ? notes[buildNoteKey(questionId, report.id, hoveredAnnotation.id)]
     : null;
 
   const getNote = (annotationId: string): NoteRecord | undefined => {
     if (!questionId) return undefined;
-    return notes[`${questionId}_${report.id}_${annotationId}`];
+    return notes[buildNoteKey(questionId, report.id, annotationId)];
   };
 
   const updateTooltipPosition = useCallback((el: HTMLElement) => {
@@ -230,6 +231,7 @@ export default function ReportViewer({
             tendency && "rounded-sm",
             isSelected && "ring-2 ring-accent-400 ring-offset-1"
           )}
+          data-annotation-id={ann.id}
           style={{
             backgroundColor: tendency
               ? isHovered || isSelected

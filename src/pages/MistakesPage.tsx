@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   BookMarked,
   AlertTriangle,
@@ -14,9 +14,12 @@ import {
   XCircle,
   CheckCircle2,
   Filter,
+  Brain,
+  Sparkles,
+  StickyNote,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useAppStore } from "@/store/useAppStore";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAppStore, parseMistakeKey, parseNoteKey, buildMistakeKey } from "@/store/useAppStore";
 import {
   Card,
   CardHeader,
@@ -95,11 +98,19 @@ function formatTimestamp(ts: number): string {
 
 export default function MistakesPage() {
   const navigate = useNavigate();
-  const { mistakes, stats, answers, clearMistake, resetAll } = useAppStore();
+  const location = useLocation();
+  const { mistakes, stats, answers, notes, clearMistake, resetAll } = useAppStore();
   const [expandedTypes, setExpandedTypes] = useState<Set<ConfusionType>>(new Set());
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [filterQuestionId, setFilterQuestionId] = useState<string>("all");
   const [filterMedia, setFilterMedia] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<'mistakes' | 'notes'>('mistakes');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const qid = params.get('questionId');
+    if (qid) setFilterQuestionId(qid);
+  }, [location.search]);
 
   const allMediaNames = useMemo(() => {
     const names = new Set<string>();
@@ -119,7 +130,7 @@ export default function MistakesPage() {
   const mistakeItems = useMemo(() => {
     const items: MistakeItemWithDetail[] = [];
     for (const [key, record] of Object.entries(mistakes)) {
-      const [questionId, reportId] = key.split("_");
+      const { questionId, reportId } = parseMistakeKey(key);
       const question = getQuestionById(questionId);
       if (!question) continue;
       const report = question.reports.find((r) => r.id === reportId);
@@ -157,6 +168,61 @@ export default function MistakesPage() {
   }, [mistakes, answers, filterQuestionId, filterMedia]);
 
   const totalMistakes = mistakeItems.length;
+
+  const spacedRepetitionItems = useMemo(() => {
+    const now = Date.now();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+
+    return mistakeItems
+      .map((item) => {
+        const daysSinceLastWrong = Math.floor((now - item.lastWrong) / ONE_DAY);
+        const urgency = item.count * 10 + (7 - Math.min(daysSinceLastWrong, 7));
+        return { ...item, urgency, daysSinceLastWrong };
+      })
+      .sort((a, b) => b.urgency - a.urgency)
+      .slice(0, 6);
+  }, [mistakeItems]);
+
+  const studyNotes = useMemo(() => {
+    const result: Array<{
+      key: string;
+      questionId: string;
+      reportId: string;
+      sentenceId: string;
+      questionTitle: string;
+      mediaName: string;
+      annotationText: string;
+      content: string;
+      updatedAt: number;
+    }> = [];
+
+    for (const [key, note] of Object.entries(notes)) {
+      const { questionId, reportId, sentenceId } = parseNoteKey(key);
+      const question = getQuestionById(questionId);
+      if (!question) continue;
+      const report = question.reports.find((r) => r.id === reportId);
+      if (!report) continue;
+
+      if (filterQuestionId !== "all" && filterQuestionId !== questionId) continue;
+      if (filterMedia !== "all" && filterMedia !== report.mediaName) continue;
+
+      const annotation = report.sentenceAnnotations.find((a) => a.id === sentenceId);
+
+      result.push({
+        key,
+        questionId,
+        reportId,
+        sentenceId,
+        questionTitle: question.title,
+        mediaName: report.mediaName,
+        annotationText: annotation?.text || '',
+        content: note.content,
+        updatedAt: note.updatedAt,
+      });
+    }
+
+    return result.sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [notes, filterQuestionId, filterMedia]);
 
   const maxConfusionType = useMemo(() => {
     if (totalMistakes === 0) return null;
@@ -246,6 +312,23 @@ export default function MistakesPage() {
     navigate(`/practice/${questionId}?reportId=${reportId}`);
   };
 
+  const handleSpacedReview = () => {
+    if (spacedRepetitionItems.length === 0) return;
+    const params = new URLSearchParams();
+    const items = spacedRepetitionItems.slice(0, 5);
+    items.forEach((item, idx) => {
+      params.set(`q${idx}`, `${item.questionId}::${item.reportId}`);
+    });
+    navigate(`/mistakes/review/spaced?${params.toString()}`);
+  };
+
+  const handleJumpToNote = (questionId: string, reportId: string, sentenceId: string) => {
+    const params = new URLSearchParams();
+    params.set('reportId', reportId);
+    if (sentenceId) params.set('highlight', sentenceId);
+    navigate(`/analysis/${questionId}${params.toString() ? `?${params.toString()}` : ''}`);
+  };
+
   if (totalMistakes === 0) {
     return (
       <div className="space-y-6">
@@ -280,7 +363,7 @@ export default function MistakesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
             <BookMarked className="w-5 h-5 text-primary-600" />
@@ -288,6 +371,39 @@ export default function MistakesPage() {
           <div>
             <h2 className="text-xl font-bold text-primary-800">错题本</h2>
             <p className="text-sm text-primary-500">记录你的薄弱点，针对性强化训练</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-primary-100/60">
+            <button
+              onClick={() => setViewMode('mistakes')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5",
+                viewMode === 'mistakes'
+                  ? "bg-white text-primary-700 shadow-soft"
+                  : "text-primary-500 hover:text-primary-700"
+              )}
+            >
+              <BookMarked className="w-4 h-4" />
+              错题
+            </button>
+            <button
+              onClick={() => setViewMode('notes')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5",
+                viewMode === 'notes'
+                  ? "bg-white text-primary-700 shadow-soft"
+                  : "text-primary-500 hover:text-primary-700"
+              )}
+            >
+              <StickyNote className="w-4 h-4" />
+              笔记
+              {studyNotes.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent-100 text-accent-700 text-xs font-mono">
+                  {studyNotes.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -362,6 +478,122 @@ export default function MistakesPage() {
         </Card>
       </div>
 
+      {viewMode === 'mistakes' && spacedRepetitionItems.length > 0 && (
+        <Card className="bg-gradient-to-br from-violet-50/60 via-white to-white border-violet-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-violet-700">
+              <Brain className="w-4 h-4" />
+              间隔复习推荐
+              <Chip variant="solid" color="sceptical" className="ml-auto !text-xs !h-6">
+                <Sparkles className="w-3 h-3 mr-1" />
+                科学复习
+              </Chip>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {spacedRepetitionItems.map((item, idx) => (
+                <div
+                  key={item.key}
+                  className="p-3 rounded-xl bg-white border border-violet-100 hover:border-violet-300 transition-colors cursor-pointer group"
+                  onClick={() => handleJumpToNote(item.questionId, item.reportId, '')}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-primary-800 line-clamp-1">
+                        {item.mediaName}
+                      </p>
+                      <p className="text-xs text-primary-500 line-clamp-1">
+                        {item.questionTitle}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-mono text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full shrink-0">
+                      #{idx + 1}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <TendencyTag tendency={item.selectedTendency} size="sm" />
+                      <span className="text-primary-300 text-xs">→</span>
+                      <TendencyTag tendency={item.correctTendency} size="sm" />
+                    </div>
+                    <span className="text-[10px] text-primary-400">
+                      {item.daysSinceLastWrong === 0 ? '今天' : `${item.daysSinceLastWrong}天前`} · 错{item.count}次
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="primary"
+              leftIcon={<PlayCircle className="w-4 h-4" />}
+              onClick={handleSpacedReview}
+              className="w-full bg-gradient-to-r from-violet-500 to-violet-600 hover:from-violet-600 hover:to-violet-700 border-none"
+            >
+              开始间隔复习（{Math.min(spacedRepetitionItems.length, 5)}题）
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {viewMode === 'notes' && studyNotes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <StickyNote className="w-4 h-4 text-accent-500" />
+              我的学习笔记
+              <Chip variant="solid" color="accent" className="ml-auto !text-xs !h-6">
+                {studyNotes.length}条
+              </Chip>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-primary-50 max-h-[500px] overflow-y-auto">
+              {studyNotes.map((note) => (
+                <div
+                  key={note.key}
+                  className="px-5 py-3 hover:bg-accent-50/40 transition-colors cursor-pointer group"
+                  onClick={() => handleJumpToNote(note.questionId, note.reportId, note.sentenceId)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-accent-100 flex items-center justify-center shrink-0 mt-0.5">
+                      <StickyNote className="w-4 h-4 text-accent-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-primary-800">
+                          {note.mediaName}
+                        </span>
+                        <span className="text-[10px] text-primary-400">
+                          {new Date(note.updatedAt).toLocaleString('zh-CN')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-primary-500 line-clamp-1 mb-1">
+                        {note.annotationText}
+                      </p>
+                      <p className="text-sm text-accent-700 line-clamp-2 bg-accent-50/60 rounded-lg px-2 py-1.5 border border-accent-100">
+                        {note.content}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-primary-300 group-hover:text-accent-500 transition-colors shrink-0 mt-6" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {viewMode === 'notes' && studyNotes.length === 0 && (
+        <Empty
+          icon={<StickyNote className="w-12 h-12 text-primary-300" />}
+          title="还没有学习笔记"
+          description="在答案解析页点击高亮句子，写下你的理解和感悟吧"
+        />
+      )}
+
+      {viewMode === 'mistakes' && (
+        <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
@@ -636,6 +868,8 @@ export default function MistakesPage() {
           })}
         </CardContent>
       </Card>
+        </>
+      )}
 
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   useParams,
   useNavigate,
@@ -42,7 +42,7 @@ import type {
   PracticeQuestion,
   MediaReport,
 } from '@/data/types';
-import { useAppStore } from '@/store/useAppStore';
+import { useAppStore, buildNoteKey } from '@/store/useAppStore';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Chip from '@/components/ui/Chip';
@@ -332,6 +332,25 @@ export default function AnalysisPage() {
   const currentReportId = locatedAnswer?.reportId || question?.reports[0]?.id || '';
   const selectedReport = question?.reports.find((r) => r.id === currentReportId);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const highlight = params.get('highlight');
+    if (highlight && selectedReport && question) {
+      const ann = selectedReport.sentenceAnnotations.find(a => a.id === highlight);
+      if (ann) {
+        setSelectedAnnotationId(highlight);
+        setNoteDraft(notes[buildNoteKey(question.id, selectedReport.id, highlight)]?.content || '');
+        setShowNotePanel(true);
+        setTimeout(() => {
+          const el = document.querySelector(`[data-annotation-id="${highlight}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
+  }, [location.search, selectedReport, question?.id, notes]);
+
   const [selectedReportTab, setSelectedReportTab] = useState<string>(currentReportId);
 
   const radarDatasets = useMemo(() => {
@@ -596,11 +615,11 @@ export default function AnalysisPage() {
                   showAnnotations={true}
                   notes={notes}
                   questionId={question.id}
-                  selectedAnnotationId={currentReportId === report.id ? selectedAnnotationId : null}
+                  selectedAnnotationId={selectedReportTab === report.id ? selectedAnnotationId : null}
                   onAnnotationClick={(annId) => {
                     setSelectedAnnotationId(annId);
                     setSelectedReportTab(report.id);
-                    const noteKey = `${question.id}_${report.id}_${annId}`;
+                    const noteKey = buildNoteKey(question.id, report.id, annId);
                     setNoteDraft(notes[noteKey]?.content || '');
                     setShowNotePanel(true);
                   }}
@@ -645,12 +664,12 @@ export default function AnalysisPage() {
             />
             <div className="flex items-center justify-between">
               <p className="text-xs text-primary-400">
-                {notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`]
-                  ? `上次编辑：${new Date(notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`].updatedAt).toLocaleString('zh-CN')}`
+                {notes[buildNoteKey(question.id, selectedReport.id, selectedAnnotationId)]
+                  ? `上次编辑：${new Date(notes[buildNoteKey(question.id, selectedReport.id, selectedAnnotationId)].updatedAt).toLocaleString('zh-CN')}`
                   : '尚未添加笔记'}
               </p>
               <div className="flex items-center gap-2">
-                {notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`] && (
+                {notes[buildNoteKey(question.id, selectedReport.id, selectedAnnotationId)] && (
                   <Button
                     variant="ghost"
                     size="sm"

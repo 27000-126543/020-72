@@ -1,5 +1,5 @@
 import { HashRouter as Router, Routes, Route, Outlet } from "react-router-dom";
-import { Home as HomeIcon, BookOpen, BookMarked, Newspaper } from "lucide-react";
+import { Home as HomeIcon, BookOpen, BookMarked, Newspaper, TrendingUp } from "lucide-react";
 import NavLinkItem from "./NavLinkItem";
 import HomePage from "@/pages/HomePage";
 import PracticeListPage from "@/pages/PracticeListPage";
@@ -7,6 +7,7 @@ import MistakesPage from "@/pages/MistakesPage";
 import MistakesReviewPage from "@/pages/MistakesReviewPage";
 import PracticeDetailPage from "@/pages/PracticeDetailPage";
 import AnalysisPage from "@/pages/AnalysisPage";
+import ProgressPage from "@/pages/ProgressPage";
 
 function Layout() {
   return (
@@ -37,6 +38,9 @@ function Layout() {
               </NavLinkItem>
               <NavLinkItem to="/mistakes" icon={<BookMarked className="w-4 h-4" />}>
                 错题本
+              </NavLinkItem>
+              <NavLinkItem to="/progress" icon={<TrendingUp className="w-4 h-4" />}>
+                学习进度
               </NavLinkItem>
             </nav>
           </div>
@@ -78,6 +82,7 @@ export default function AppLayout() {
           <Route path="analysis/:id" element={<AnalysisPage />} />
           <Route path="mistakes" element={<MistakesPage />} />
           <Route path="mistakes/review/:type" element={<MistakesReviewPage />} />
+          <Route path="progress" element={<ProgressPage />} />
           <Route path="*" element={<div className="text-center text-primary-500 py-20">404 页面未找到</div>} />
         </Route>
       </Routes>

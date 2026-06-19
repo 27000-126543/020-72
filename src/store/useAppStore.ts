@@ -85,7 +85,23 @@ function persistNotes(notes: NotesMap) {
 }
 
 function buildNoteKey(questionId: string, reportId: string, sentenceId: string): string {
-  return `${questionId}_${reportId}_${sentenceId}`;
+  return `${questionId}::${reportId}::${sentenceId}`;
+}
+
+export function buildMistakeKey(questionId: string, reportId: string): string {
+  return `${questionId}::${reportId}`;
+}
+
+export { buildNoteKey };
+
+export function parseMistakeKey(key: string): { questionId: string; reportId: string } {
+  const [questionId, ...rest] = key.split('::');
+  return { questionId, reportId: rest.join('::') };
+}
+
+export function parseNoteKey(key: string): { questionId: string; reportId: string; sentenceId: string } {
+  const [questionId, reportId, ...rest] = key.split('::');
+  return { questionId, reportId, sentenceId: rest.join('::') };
 }
 
 export const useAppStore = create<AppState & AppActions>()((set, get) => ({
@@ -108,7 +124,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
     const newStats = computeStats(newAnswers);
 
-    const mistakeKey = `${answer.questionId}_${answer.reportId}`;
+    const mistakeKey = buildMistakeKey(answer.questionId, answer.reportId);
     let newMistakes: MistakesMap = { ...state.mistakes };
     if (!answer.isCorrect) {
       const existing = newMistakes[mistakeKey];

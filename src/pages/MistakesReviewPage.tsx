@@ -15,7 +15,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useAppStore } from "@/store/useAppStore";
+import { useAppStore, parseMistakeKey } from "@/store/useAppStore";
 import {
   Card,
   CardHeader,
@@ -110,7 +110,7 @@ export default function MistakesReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ type: string }>();
-  const type = params.type as ConfusionType;
+  const type = params.type as ConfusionType | 'spaced';
 
   const { mistakes, answers, submitAnswer } = useAppStore();
 
@@ -128,10 +128,45 @@ export default function MistakesReviewPage() {
     };
   }, [location.search]);
 
+  const spacedItems = useMemo<ReviewItem[]>(() => {
+    if (type !== "spaced") return [];
+    const sp = new URLSearchParams(location.search);
+    const items: ReviewItem[] = [];
+    for (let i = 0; i < 5; i++) {
+      const val = sp.get(`q${i}`);
+      if (!val) continue;
+      const [questionId, reportId] = val.split('::');
+      const question = getQuestionById(questionId);
+      if (!question) continue;
+      const report = question.reports.find((r) => r.id === reportId);
+      if (!report) continue;
+
+      const relatedWrongAnswers = answers.filter(
+        (a) =>
+          a.questionId === questionId &&
+          a.reportId === reportId &&
+          !a.isCorrect
+      );
+      if (relatedWrongAnswers.length === 0) continue;
+      const latestWrong = relatedWrongAnswers.reduce((prev, curr) =>
+        curr.answeredAt > prev.answeredAt ? curr : prev
+      );
+
+      items.push({
+        key: `${questionId}::${reportId}`,
+        question,
+        report,
+        previousWrongTendency: latestWrong.selectedTendency,
+        errorCount: mistakes[`${questionId}::${reportId}`]?.count || 1,
+      });
+    }
+    return items;
+  }, [type, location.search, answers, mistakes]);
+
   const allFilteredMistakes = useMemo<ReviewItem[]>(() => {
     const items: ReviewItem[] = [];
     for (const [key, record] of Object.entries(mistakes)) {
-      const [questionId, reportId] = key.split("_");
+      const { questionId, reportId } = parseMistakeKey(key);
       const question = getQuestionById(questionId);
       if (!question) continue;
       const report = question.reports.find((r) => r.id === reportId);
@@ -164,6 +199,7 @@ export default function MistakesReviewPage() {
 
   const reviewItems = useMemo<ReviewItem[]>(() => {
     if (!type) return [];
+    if (type === "spaced") return spacedItems;
     return allFilteredMistakes.filter((item) => {
       const relatedWrongAnswers = answers.filter(
         (a) =>
@@ -177,7 +213,7 @@ export default function MistakesReviewPage() {
       );
       return latestWrong.confusionType === type;
     });
-  }, [type, allFilteredMistakes, answers]);
+  }, [type, allFilteredMistakes, spacedItems, answers]);
 
   const notReviewedItems = useMemo<ReviewItem[]>(() => {
     const reviewedKeys = new Set(reviewItems.map((r) => r.key));
@@ -338,11 +374,15 @@ export default function MistakesReviewPage() {
             <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-card mb-4">
               <Trophy className="w-8 h-8 text-white" />
             </div>
-            <CardTitle className="text-2xl">本次重做完成</CardTitle>
+            <CardTitle className="text-2xl">
+              {type === "spaced" ? "间隔复习完成" : "本次重做完成"}
+            </CardTitle>
             <p className="text-sm text-primary-500 mt-1">
-              {filterParams.questionId !== "all" || filterParams.media !== "all"
+              {type === "spaced"
+                ? "基于艾宾浩斯遗忘曲线的科学复习"
+                : filterParams.questionId !== "all" || filterParams.media !== "all"
                 ? "基于当前筛选范围"
-                : CONFUSION_TYPE_LABELS[type] || ""}
+                : CONFUSION_TYPE_LABELS[type as ConfusionType] || ""}
             </p>
           </CardHeader>
           <CardContent>
@@ -586,13 +626,24 @@ export default function MistakesReviewPage() {
           <div className="h-6 w-px bg-primary-200" />
           <div>
             <h2 className="text-lg font-bold text-primary-800">
-              按类型重做：
-              <span
-                className="ml-1"
-                style={{ color: type ? CONFUSION_TYPE_COLORS[type] : undefined }}
-              >
-                {type ? CONFUSION_TYPE_LABELS[type] : ""}
-              </span>
+              {type === "spaced" ? (
+                <>
+                  间隔复习
+                  <span className="ml-1 text-violet-600">
+                    科学复习，记忆更牢
+                  </span>
+                </>
+              ) : (
+                <>
+                  按类型重做：
+                  <span
+                    className="ml-1"
+                    style={{ color: type ? CONFUSION_TYPE_COLORS[type as ConfusionType] : undefined }}
+                  >
+                    {type ? CONFUSION_TYPE_LABELS[type as ConfusionType] : ""}
+                  </span>
+                </>
+              )}
             </h2>
           </div>
         </div>
