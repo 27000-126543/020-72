@@ -415,6 +415,13 @@ export default function MistakesReviewPage() {
                           ) : (
                             <XCircle className="w-5 h-5 text-red-500 shrink-0" />
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/analysis/${item?.question.id}?reportId=${item?.report.id}`)}
+                          >
+                            解析
+                          </Button>
                         </div>
                       </div>
                     );
@@ -612,14 +619,24 @@ export default function MistakesReviewPage() {
                     提交答案
                   </Button>
                 ) : (
-                  <Button
-                    variant="accent"
-                    size="lg"
-                    rightIcon={<ChevronRight className="w-4 h-4" />}
-                    onClick={handleNext}
-                  >
-                    {currentIndex >= totalItems - 1 ? "查看总结" : "下一题"}
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      leftIcon={<BookOpen className="w-4 h-4" />}
+                      onClick={() => navigate(`/analysis/${currentItem.question.id}?reportId=${currentItem.report.id}`)}
+                    >
+                      查看解析
+                    </Button>
+                    <Button
+                      variant="accent"
+                      size="lg"
+                      rightIcon={<ChevronRight className="w-4 h-4" />}
+                      onClick={handleNext}
+                    >
+                      {currentIndex >= totalItems - 1 ? "查看总结" : "下一题"}
+                    </Button>
+                  </>
                 )}
               </div>
             </CardFooter>

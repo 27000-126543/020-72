@@ -73,7 +73,7 @@ export const q02_metro: PracticeQuestion = {
       sentenceAnnotations: [
         { id: 's1', text: '记者从市地铁运营有限公司获悉。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '开篇明确说明所有信息来自运营方，没有引入独立调查或其他信源，表明报道只是转述官方说法，不做独立判断。', keywords: ['从...获悉', '单一信源', '转述'] },
         { id: 's2', text: '未造成人员伤亡。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '用"未造成人员伤亡"这一最低安全标准作为事件定性，回避了乘客身体不适、心理创伤等非致命但真实存在的负面影响。', keywords: ['未造成人员伤亡', '最低安全标准', '回避负面影响'] },
-        { id: 's3', text: '一是组织后续列车就近清客下线...二是调度就近车站工作人员...三是通知供电、信号、车辆等专业技术人员待命。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '使用"一是二是三是"的公文式枚举方式，逐条列出运营方的应对措施，给人以"措施周全"的印象，但没有评价这些措施的实际效果。', keywords: ['一是二是三是', '枚举措施', '不评价效果'] },
+        { id: 's3', text: '一是组织后续列车就近清客下线，减少对整条线路的影响；二是调度就近车站工作人员携带应急装备赶赴现场；三是通知供电、信号、车辆等专业技术人员待命，随时准备开展设备抢修。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '使用"一是二是三是"的公文式枚举方式，逐条列出运营方的应对措施，给人以"措施周全"的印象，但没有评价这些措施的实际效果。', keywords: ['一是二是三是', '枚举措施', '不评价效果'] },
         { id: 's4', text: '疏散工作面临一定困难。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '"一定困难"是非常模糊的表述，既承认了问题存在，又刻意弱化了困难的严重程度，属于典型的观望式措辞。', keywords: ['一定困难', '模糊表述', '弱化程度'] },
         { id: 's5', text: '整个疏散过程总体平稳有序。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '"总体"、"有序"等词表面是正面评价，但留有充分余地——"总体平稳"暗示局部可能有不平稳的情况，只是报道选择不展开。', keywords: ['总体', '平稳有序', '留有充分余地'] },
         { id: 's6', text: '针对部分乘客因高温出现身体不适的情况。', startIndex: 0, endIndex: 0, tendencyLabel: 'wait_and_see', annotation: '"部分"是一个模糊的量词，既报道了事实又不透露具体规模，"因高温出现身体不适"将"近40度高温滞留2小时"简化为中性的因果陈述。', keywords: ['部分', '模糊量词', '简化陈述'] },

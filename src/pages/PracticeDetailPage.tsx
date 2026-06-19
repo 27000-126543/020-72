@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { ChevronRight, ChevronLeft, Send, AlertCircle } from 'lucide-react';
 import {
@@ -119,6 +119,16 @@ export default function PracticeDetailPage() {
   const [selectedBasis, setSelectedBasis] = useState<BasisOption[]>([]);
   const [selectedAffectedGroups, setSelectedAffectedGroups] = useState<AffectedGroup[]>([]);
   const [tendencyError, setTendencyError] = useState(false);
+
+  useEffect(() => {
+    if (initialReportId && initialReportId !== selectedReportId) {
+      setSelectedReportId(initialReportId);
+      setSelectedTendency('');
+      setSelectedBasis([]);
+      setSelectedAffectedGroups([]);
+      setTendencyError(false);
+    }
+  }, [initialReportId]);
 
   if (!question) {
     return (

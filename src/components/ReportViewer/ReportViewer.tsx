@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Calendar, Tag, Info, MessageSquare } from "lucide-react";
 import type { MediaReport, MediaTendency, SentenceAnnotation } from "@/data/types";
 import { TENDENCY_COLORS, TENDENCY_LABELS } from "@/data/types";
@@ -12,6 +13,12 @@ interface ReportViewerProps {
 interface SentenceSegment {
   text: string;
   annotation?: SentenceAnnotation;
+}
+
+interface TooltipPosition {
+  x: number;
+  y: number;
+  flipDown: boolean;
 }
 
 const TENDENCY_BG_OPACITY: Record<MediaTendency, string> = {
@@ -29,6 +36,21 @@ const TENDENCY_BG_HOVER: Record<MediaTendency, string> = {
   sceptical: "rgba(212, 160, 23, 0.28)",
   neutral: "rgba(61, 139, 92, 0.28)",
 };
+
+const TOOLTIP_WIDTH = 320;
+
+function normalizeText(s: string): string {
+  return s.replace(/[\s。，！？；：、""''「」『』（）\(\)《》〈〉\[\]【】…—\-·\u3000]/g, '');
+}
+
+function fuzzyIncludes(haystack: string, needle: string): boolean {
+  if (haystack.includes(needle)) return true;
+  const nh = normalizeText(haystack);
+  const nn = normalizeText(needle);
+  if (nh.includes(nn)) return true;
+  if (nn.length <= 4) return false;
+  return nh.includes(nn.slice(0, Math.min(nn.length, 12)));
+}
 
 function splitTextByAnnotations(
   text: string,
@@ -58,6 +80,36 @@ function splitTextByAnnotations(
           startIndex: idx,
           endIndex: idx + ann.text.length,
         });
+        continue;
+      }
+      const normText = normalizeText(text);
+      const normAnn = normalizeText(ann.text);
+      const normIdx = normText.indexOf(normAnn);
+      if (normIdx !== -1 && normAnn.length >= 4) {
+        let charCount = 0;
+        let startInOrig = -1;
+        let endInOrig = -1;
+        for (let i = 0; i < text.length; i++) {
+          const c = normalizeText(text[i]);
+          if (c.length > 0) {
+            if (charCount === normIdx && startInOrig === -1) {
+              startInOrig = i;
+            }
+            charCount += c.length;
+            if (charCount >= normIdx + normAnn.length && endInOrig === -1) {
+              endInOrig = i + 1;
+              break;
+            }
+          }
+        }
+        if (startInOrig !== -1 && endInOrig !== -1) {
+          found.push({
+            ...ann,
+            text: text.slice(startInOrig, endInOrig),
+            startIndex: startInOrig,
+            endIndex: endInOrig,
+          });
+        }
       }
     }
     sorted = found.sort((a, b) => a.startIndex - b.startIndex);
@@ -106,28 +158,38 @@ export default function ReportViewer({
   showAnnotations,
 }: ReportViewerProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
+  const [tooltipPos, setTooltipPos] = useState<TooltipPosition>({
     x: 0,
     y: 0,
+    flipDown: false,
   });
 
   const hoveredAnnotation = report.sentenceAnnotations.find(
     (a) => a.id === hoveredId
   );
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipPos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  };
+  const updateTooltipPosition = useCallback((el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    const halfW = TOOLTIP_WIDTH / 2;
+    let x = rect.left + rect.width / 2;
+    if (x - halfW < 8) x = halfW + 8;
+    if (x + halfW > vpW - 8) x = vpW - halfW - 8;
+    const spaceAbove = rect.top;
+    const estimatedTooltipH = 200;
+    const flipDown = spaceAbove < estimatedTooltipH + 16;
+    const y = flipDown
+      ? rect.bottom + 12
+      : rect.top - 12;
+    setTooltipPos({ x, y, flipDown });
+  }, []);
 
   const renderSegments = (text: string) => {
     if (!showAnnotations) return text;
 
     const matchingAnnotations = report.sentenceAnnotations.filter((a) =>
-      text.includes(a.text)
+      fuzzyIncludes(text, a.text)
     );
 
     const segs = splitTextByAnnotations(text, matchingAnnotations);
@@ -145,7 +207,7 @@ export default function ReportViewer({
         <span
           key={`${ann.id}-${idx}`}
           className={cn(
-            "sentence-highlight relative inline",
+            "sentence-highlight inline",
             tendency && "rounded-sm"
           )}
           style={{
@@ -159,14 +221,8 @@ export default function ReportViewer({
           }}
           onMouseEnter={(e) => {
             setHoveredId(ann.id);
-            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            const parent = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
-            setTooltipPos({
-              x: rect.left - parent.left + rect.width / 2,
-              y: rect.top - parent.top - 8,
-            });
+            updateTooltipPosition(e.currentTarget as HTMLElement);
           }}
-          onMouseMove={handleMouseMove}
           onMouseLeave={() => setHoveredId(null)}
         >
           {seg.text}
@@ -175,8 +231,76 @@ export default function ReportViewer({
     });
   };
 
+  const tooltipContent = hoveredAnnotation && (
+    <div
+      className="fixed z-[9999] pointer-events-none animate-fade-in"
+      style={{
+        left: tooltipPos.x,
+        top: tooltipPos.y,
+        transform: tooltipPos.flipDown
+          ? "translate(-50%, 0)"
+          : "translate(-50%, -100%)",
+      }}
+    >
+      <div
+        className="relative w-72 md:w-80 rounded-xl shadow-lift border border-primary-100 bg-white/98 backdrop-blur-sm p-4"
+      >
+        {hoveredAnnotation.tendencyLabel && (
+          <div className="flex items-center gap-2 mb-2.5">
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+              style={{
+                backgroundColor:
+                  TENDENCY_COLORS[hoveredAnnotation.tendencyLabel] +
+                  "20",
+                color: TENDENCY_COLORS[hoveredAnnotation.tendencyLabel],
+              }}
+            >
+              <MessageSquare className="w-3 h-3" />
+              {TENDENCY_LABELS[hoveredAnnotation.tendencyLabel]}
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-start gap-2 mb-2.5">
+          <Info className="w-4 h-4 text-primary-400 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-primary-700 leading-relaxed">
+            {hoveredAnnotation.annotation}
+          </p>
+        </div>
+
+        {hoveredAnnotation.keywords.length > 0 && (
+          <div className="border-t border-primary-100/70 pt-2.5">
+            <p className="text-[10px] uppercase tracking-wider text-primary-400 font-semibold mb-1.5">
+              关键词
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {hoveredAnnotation.keywords.map((kw, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium border border-accent-200/60"
+                >
+                  {kw}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-white/98 border-primary-100 rotate-45",
+            tooltipPos.flipDown
+              ? "top-0 -translate-y-1/2 border-l border-t"
+              : "top-full -mt-1.5 border-b border-r"
+          )}
+        />
+      </div>
+    </div>
+  );
+
   return (
-    <div className="relative bg-paper-100 border border-paper-300/60 rounded-2xl shadow-soft overflow-hidden bg-grain">
+    <div className="bg-paper-100 border border-paper-300/60 rounded-2xl shadow-soft bg-grain">
       <div className="relative border-b border-paper-300/60 bg-gradient-to-r from-white/80 to-paper-50/80 px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -212,7 +336,7 @@ export default function ReportViewer({
         </div>
       </div>
 
-      <div className="p-6 lg:p-8" onMouseMove={handleMouseMove}>
+      <div className="p-6 lg:p-8">
         <article className="newspaper max-w-none">
           <h2 className="font-serif text-2xl lg:text-3xl font-bold text-primary-900 leading-tight mb-5 text-balance">
             {renderSegments(report.headline)}
@@ -246,66 +370,7 @@ export default function ReportViewer({
         </article>
       </div>
 
-      {hoveredAnnotation && (
-        <div
-          className="absolute z-50 pointer-events-none animate-fade-in"
-          style={{
-            left: tooltipPos.x,
-            top: tooltipPos.y,
-            transform: "translate(-50%, -100%)",
-          }}
-        >
-          <div
-            className="relative w-72 md:w-80 rounded-xl shadow-lift border border-primary-100 bg-white/98 backdrop-blur-sm p-4"
-          >
-            {hoveredAnnotation.tendencyLabel && (
-              <div className="flex items-center gap-2 mb-2.5">
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-                  style={{
-                    backgroundColor:
-                      TENDENCY_COLORS[hoveredAnnotation.tendencyLabel] +
-                      "20",
-                    color: TENDENCY_COLORS[hoveredAnnotation.tendencyLabel],
-                  }}
-                >
-                  <MessageSquare className="w-3 h-3" />
-                  {TENDENCY_LABELS[hoveredAnnotation.tendencyLabel]}
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-start gap-2 mb-2.5">
-              <Info className="w-4 h-4 text-primary-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-primary-700 leading-relaxed">
-                {hoveredAnnotation.annotation}
-              </p>
-            </div>
-
-            {hoveredAnnotation.keywords.length > 0 && (
-              <div className="border-t border-primary-100/70 pt-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-primary-400 font-semibold mb-1.5">
-                  关键词
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {hoveredAnnotation.keywords.map((kw, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent-50 text-accent-700 text-[11px] font-medium border border-accent-200/60"
-                    >
-                      {kw}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div
-              className="absolute left-1/2 -translate-x-1/2 top-full w-3 h-3 bg-white/98 border-b border-r border-primary-100 rotate-45 -mt-1.5"
-            />
-          </div>
-        </div>
-      )}
+      {typeof document !== "undefined" && createPortal(tooltipContent, document.body)}
     </div>
   );
 }
