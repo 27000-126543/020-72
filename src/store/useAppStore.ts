@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { UserAnswer, UserStats, MistakesMap } from '../data/types';
+import type { UserAnswer, UserStats, MistakesMap, NotesMap, NoteRecord } from '../data/types';
 import {
   SafeLocalStorage,
   ANSWERS_KEY,
   STATS_KEY,
   MISTAKES_KEY,
   LAST_QUESTION_KEY,
+  NOTES_KEY,
 } from '../utils/storage';
 import { computeStats } from '../utils/statistics';
 
@@ -13,12 +14,15 @@ interface AppState {
   answers: UserAnswer[];
   stats: UserStats;
   mistakes: MistakesMap;
+  notes: NotesMap;
   lastQuestionId: string;
 }
 
 interface AppActions {
   submitAnswer: (answer: UserAnswer) => void;
   clearMistake: (key: string) => void;
+  setNote: (questionId: string, reportId: string, sentenceId: string, content: string) => void;
+  removeNote: (questionId: string, reportId: string, sentenceId: string) => void;
   resetAll: () => void;
 }
 
@@ -48,12 +52,14 @@ function getInitialState(): AppState {
   const answers = SafeLocalStorage.get<UserAnswer[]>(ANSWERS_KEY, []);
   const stats = SafeLocalStorage.get<UserStats>(STATS_KEY, computeStats(answers));
   const mistakes = SafeLocalStorage.get<MistakesMap>(MISTAKES_KEY, {});
+  const notes = SafeLocalStorage.get<NotesMap>(NOTES_KEY, {});
   const lastQuestionId = SafeLocalStorage.get<string>(LAST_QUESTION_KEY, '');
 
   return {
     answers,
     stats,
     mistakes,
+    notes,
     lastQuestionId,
   };
 }
@@ -72,6 +78,14 @@ function persistMistakes(mistakes: MistakesMap) {
 
 function persistLastQuestionId(id: string) {
   SafeLocalStorage.set(LAST_QUESTION_KEY, id);
+}
+
+function persistNotes(notes: NotesMap) {
+  SafeLocalStorage.set(NOTES_KEY, notes);
+}
+
+function buildNoteKey(questionId: string, reportId: string, sentenceId: string): string {
+  return `${questionId}_${reportId}_${sentenceId}`;
 }
 
 export const useAppStore = create<AppState & AppActions>()((set, get) => ({
@@ -131,16 +145,44 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set({ mistakes: newMistakes });
   },
 
+  setNote: (questionId: string, reportId: string, sentenceId: string, content: string) => {
+    const state = get();
+    const key = buildNoteKey(questionId, reportId, sentenceId);
+    const now = Date.now();
+    const existing = state.notes[key];
+    const newNotes: NotesMap = {
+      ...state.notes,
+      [key]: {
+        content,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+    };
+    persistNotes(newNotes);
+    set({ notes: newNotes });
+  },
+
+  removeNote: (questionId: string, reportId: string, sentenceId: string) => {
+    const state = get();
+    const key = buildNoteKey(questionId, reportId, sentenceId);
+    const newNotes = { ...state.notes };
+    delete newNotes[key];
+    persistNotes(newNotes);
+    set({ notes: newNotes });
+  },
+
   resetAll: () => {
     SafeLocalStorage.remove(ANSWERS_KEY);
     SafeLocalStorage.remove(STATS_KEY);
     SafeLocalStorage.remove(MISTAKES_KEY);
     SafeLocalStorage.remove(LAST_QUESTION_KEY);
+    SafeLocalStorage.remove(NOTES_KEY);
 
     set({
       answers: [],
       stats: DEFAULT_STATS,
       mistakes: {},
+      notes: {},
       lastQuestionId: '',
     });
   },

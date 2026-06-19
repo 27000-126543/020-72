@@ -112,6 +112,14 @@ export type MistakeRecord = {
 
 export type MistakesMap = Record<string, MistakeRecord>;
 
+export interface NoteRecord {
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type NotesMap = Record<string, NoteRecord>;
+
 export const TENDENCY_COLORS: Record<MediaTendency, string> = {
   sympathy: "#4a90d9",
   accountability: "#c94a4a",

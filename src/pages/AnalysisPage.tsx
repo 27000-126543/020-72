@@ -21,6 +21,11 @@ import {
   Lightbulb,
   AlertCircle,
   PlayCircle,
+  PenLine,
+  StickyNote,
+  Trash2,
+  Save,
+  X,
 } from 'lucide-react';
 import {
   getQuestionById,
@@ -265,11 +270,17 @@ export default function AnalysisPage() {
   const state = location.state as AnalysisLocationState | null;
   const answers = useAppStore((s) => s.answers);
   const mistakes = useAppStore((s) => s.mistakes);
+  const notes = useAppStore((s) => s.notes);
   const clearMistake = useAppStore((s) => s.clearMistake);
+  const setNote = useAppStore((s) => s.setNote);
+  const removeNote = useAppStore((s) => s.removeNote);
 
   const question = getQuestionById(id || '');
 
   const [addedToMistakes, setAddedToMistakes] = useState(false);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [showNotePanel, setShowNotePanel] = useState(false);
 
   const locatedAnswer = useMemo(() => {
     if (!question) return null;
@@ -580,12 +591,94 @@ export default function AnalysisPage() {
             </TabsList>
             {question.reports.map((report) => (
               <TabsContent key={report.id} value={report.id}>
-                <ReportViewer report={report} showAnnotations={true} />
+                <ReportViewer
+                  report={report}
+                  showAnnotations={true}
+                  notes={notes}
+                  questionId={question.id}
+                  selectedAnnotationId={currentReportId === report.id ? selectedAnnotationId : null}
+                  onAnnotationClick={(annId) => {
+                    setSelectedAnnotationId(annId);
+                    setSelectedReportTab(report.id);
+                    const noteKey = `${question.id}_${report.id}_${annId}`;
+                    setNoteDraft(notes[noteKey]?.content || '');
+                    setShowNotePanel(true);
+                  }}
+                />
               </TabsContent>
             ))}
           </Tabs>
         </CardContent>
       </Card>
+
+      {showNotePanel && selectedAnnotationId && selectedReport && (
+        <Card className="border-accent-200 bg-gradient-to-br from-accent-50/40 via-white to-white">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <StickyNote className="w-5 h-5 text-accent-500" />
+                学习笔记
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<X className="w-4 h-4" />}
+                onClick={() => {
+                  setShowNotePanel(false);
+                  setSelectedAnnotationId(null);
+                }}
+              >
+                关闭
+              </Button>
+            </div>
+            <p className="text-sm text-primary-600 mt-2 bg-white/60 rounded-lg p-3 border border-accent-100">
+              <span className="text-primary-400 text-xs block mb-1">选中句子：</span>
+              {selectedReport.sentenceAnnotations.find(a => a.id === selectedAnnotationId)?.text || ''}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <textarea
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="写下你的理解、感悟或记忆要点..."
+              className="w-full h-32 p-3 rounded-lg border border-primary-200 bg-white text-sm text-primary-700 placeholder:text-primary-300 focus:outline-none focus:ring-2 focus:ring-accent-300 focus:border-accent-400 resize-none"
+            />
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-primary-400">
+                {notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`]
+                  ? `上次编辑：${new Date(notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`].updatedAt).toLocaleString('zh-CN')}`
+                  : '尚未添加笔记'}
+              </p>
+              <div className="flex items-center gap-2">
+                {notes[`${question.id}_${selectedReport.id}_${selectedAnnotationId}`] && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<Trash2 className="w-4 h-4" />}
+                    onClick={() => {
+                      removeNote(question.id, selectedReport.id, selectedAnnotationId);
+                      setNoteDraft('');
+                    }}
+                  >
+                    删除
+                  </Button>
+                )}
+                <Button
+                  variant="accent"
+                  size="sm"
+                  leftIcon={<Save className="w-4 h-4" />}
+                  disabled={!noteDraft.trim()}
+                  onClick={() => {
+                    setNote(question.id, selectedReport.id, selectedAnnotationId, noteDraft.trim());
+                  }}
+                >
+                  保存笔记
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

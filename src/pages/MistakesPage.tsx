@@ -13,6 +13,7 @@ import {
   CalendarX,
   XCircle,
   CheckCircle2,
+  Filter,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/useAppStore";
@@ -29,7 +30,7 @@ import Empty from "@/components/ui/Empty";
 import PieChart, { PieChartDataItem } from "@/components/StatsChart/PieChart";
 import LineChart, { LineChartDataItem } from "@/components/StatsChart/LineChart";
 import type { ConfusionType, MediaTendency, UserAnswer } from "@/data/types";
-import { getQuestionById } from "@/data";
+import { questions, getQuestionById } from "@/data";
 import { cn } from "@/lib/utils";
 
 const CONFUSION_TYPE_LABELS: Record<ConfusionType, string> = {
@@ -97,6 +98,23 @@ export default function MistakesPage() {
   const { mistakes, stats, answers, clearMistake, resetAll } = useAppStore();
   const [expandedTypes, setExpandedTypes] = useState<Set<ConfusionType>>(new Set());
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [filterQuestionId, setFilterQuestionId] = useState<string>("all");
+  const [filterMedia, setFilterMedia] = useState<string>("all");
+
+  const allMediaNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const q of questions) {
+      for (const r of q.reports) {
+        names.add(r.mediaName);
+      }
+    }
+    return Array.from(names).sort();
+  }, []);
+
+  const filteredQuestions = useMemo(() => {
+    if (filterMedia === "all") return questions;
+    return questions.filter((q) => q.reports.some((r) => r.mediaName === filterMedia));
+  }, [filterMedia]);
 
   const mistakeItems = useMemo(() => {
     const items: MistakeItemWithDetail[] = [];
@@ -106,6 +124,9 @@ export default function MistakesPage() {
       if (!question) continue;
       const report = question.reports.find((r) => r.id === reportId);
       if (!report) continue;
+
+      if (filterQuestionId !== "all" && filterQuestionId !== questionId) continue;
+      if (filterMedia !== "all" && filterMedia !== report.mediaName) continue;
 
       const relatedAnswers = answers.filter(
         (a) => a.questionId === questionId && a.reportId === reportId && !a.isCorrect
@@ -132,8 +153,8 @@ export default function MistakesPage() {
         mediaName: report.mediaName,
       });
     }
-    return items;
-  }, [mistakes, answers]);
+    return items.sort((a, b) => b.lastWrong - a.lastWrong);
+  }, [mistakes, answers, filterQuestionId, filterMedia]);
 
   const totalMistakes = mistakeItems.length;
 
@@ -214,7 +235,11 @@ export default function MistakesPage() {
   };
 
   const handleBatchReview = (type: ConfusionType) => {
-    navigate(`/mistakes/review/${type}`);
+    const params = new URLSearchParams();
+    if (filterQuestionId !== "all") params.set("questionId", filterQuestionId);
+    if (filterMedia !== "all") params.set("media", filterMedia);
+    const queryStr = params.toString();
+    navigate(`/mistakes/review/${type}${queryStr ? `?${queryStr}` : ""}`);
   };
 
   const handleSingleReview = (questionId: string, reportId: string) => {
@@ -369,6 +394,62 @@ export default function MistakesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-primary-500" />
+              <CardTitle className="text-base">筛选错题</CardTitle>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={filterQuestionId}
+                onChange={(e) => setFilterQuestionId(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg border border-primary-200 bg-white text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              >
+                <option value="all">全部题组</option>
+                {filteredQuestions.map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filterMedia}
+                onChange={(e) => setFilterMedia(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg border border-primary-200 bg-white text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              >
+                <option value="all">全部媒体</option>
+                {allMediaNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              {(filterQuestionId !== "all" || filterMedia !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilterQuestionId("all");
+                    setFilterMedia("all");
+                  }}
+                >
+                  清除筛选
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        {totalMistakes > 0 && (filterQuestionId !== "all" || filterMedia !== "all") && (
+          <CardContent className="pt-0">
+            <p className="text-sm text-primary-500">
+              当前筛选条件下共有 <span className="font-semibold text-primary-700">{totalMistakes}</span> 道错题
+            </p>
+          </CardContent>
+        )}
+      </Card>
 
       <Card>
         <CardHeader>

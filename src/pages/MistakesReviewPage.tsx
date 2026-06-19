@@ -12,8 +12,9 @@ import {
   TrendingUp,
   Home,
   AlertCircle,
+  Clock,
 } from "lucide-react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAppStore } from "@/store/useAppStore";
 import {
   Card,
@@ -38,7 +39,7 @@ import type {
   AffectedGroup,
 } from "@/data/types";
 import { TENDENCY_LABELS } from "@/data/types";
-import { getQuestionById } from "@/data";
+import { questions, getQuestionById } from "@/data";
 import { classifyConfusion, calculateScore } from "@/utils/scoring";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +108,7 @@ interface ReviewResult {
 
 export default function MistakesReviewPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ type: string }>();
   const type = params.type as ConfusionType;
 
@@ -118,12 +120,16 @@ export default function MistakesReviewPage() {
   const [results, setResults] = useState<ReviewResult[]>([]);
   const [isFinished, setIsFinished] = useState(false);
 
-  const reviewItems = useMemo<ReviewItem[]>(() => {
-    if (!type) return [];
+  const filterParams = useMemo(() => {
+    const sp = new URLSearchParams(location.search);
+    return {
+      questionId: sp.get("questionId") || "all",
+      media: sp.get("media") || "all",
+    };
+  }, [location.search]);
 
+  const allFilteredMistakes = useMemo<ReviewItem[]>(() => {
     const items: ReviewItem[] = [];
-    const processed = new Set<string>();
-
     for (const [key, record] of Object.entries(mistakes)) {
       const [questionId, reportId] = key.split("_");
       const question = getQuestionById(questionId);
@@ -131,23 +137,19 @@ export default function MistakesReviewPage() {
       const report = question.reports.find((r) => r.id === reportId);
       if (!report) continue;
 
+      if (filterParams.questionId !== "all" && filterParams.questionId !== questionId) continue;
+      if (filterParams.media !== "all" && filterParams.media !== report.mediaName) continue;
+
       const relatedWrongAnswers = answers.filter(
         (a) =>
           a.questionId === questionId &&
           a.reportId === reportId &&
           !a.isCorrect
       );
-
       if (relatedWrongAnswers.length === 0) continue;
-
       const latestWrong = relatedWrongAnswers.reduce((prev, curr) =>
         curr.answeredAt > prev.answeredAt ? curr : prev
       );
-
-      if (latestWrong.confusionType !== type) continue;
-
-      if (processed.has(key)) continue;
-      processed.add(key);
 
       items.push({
         key,
@@ -157,9 +159,30 @@ export default function MistakesReviewPage() {
         errorCount: record.count,
       });
     }
+    return items.sort((a, b) => b.errorCount - a.errorCount);
+  }, [mistakes, answers, filterParams]);
 
-    return items;
-  }, [type, mistakes, answers]);
+  const reviewItems = useMemo<ReviewItem[]>(() => {
+    if (!type) return [];
+    return allFilteredMistakes.filter((item) => {
+      const relatedWrongAnswers = answers.filter(
+        (a) =>
+          a.questionId === item.question.id &&
+          a.reportId === item.report.id &&
+          !a.isCorrect
+      );
+      if (relatedWrongAnswers.length === 0) return false;
+      const latestWrong = relatedWrongAnswers.reduce((prev, curr) =>
+        curr.answeredAt > prev.answeredAt ? curr : prev
+      );
+      return latestWrong.confusionType === type;
+    });
+  }, [type, allFilteredMistakes, answers]);
+
+  const notReviewedItems = useMemo<ReviewItem[]>(() => {
+    const reviewedKeys = new Set(reviewItems.map((r) => r.key));
+    return allFilteredMistakes.filter((item) => !reviewedKeys.has(item.key));
+  }, [allFilteredMistakes, reviewItems]);
 
   const totalItems = reviewItems.length;
   const currentItem = reviewItems[currentIndex];
@@ -281,6 +304,22 @@ export default function MistakesReviewPage() {
   }
 
   if (isFinished) {
+    const removedItems = results
+      .filter((r) => r.isCorrect)
+      .map((r) => ({
+        result: r,
+        reviewItem: reviewItems.find((ri) => ri.key === r.key),
+      }))
+      .filter((x) => x.reviewItem);
+
+    const stillWrongItems = results
+      .filter((r) => !r.isCorrect)
+      .map((r) => ({
+        result: r,
+        reviewItem: reviewItems.find((ri) => ri.key === r.key),
+      }))
+      .filter((x) => x.reviewItem);
+
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -299,24 +338,14 @@ export default function MistakesReviewPage() {
             <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-500 flex items-center justify-center shadow-card mb-4">
               <Trophy className="w-8 h-8 text-white" />
             </div>
-            <CardTitle className="text-2xl">练习完成！</CardTitle>
+            <CardTitle className="text-2xl">本次重做完成</CardTitle>
+            <p className="text-sm text-primary-500 mt-1">
+              {filterParams.questionId !== "all" || filterParams.media !== "all"
+                ? "基于当前筛选范围"
+                : CONFUSION_TYPE_LABELS[type] || ""}
+            </p>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
-              {type && (
-                <Chip
-                  variant="solid"
-                  color="primary"
-                  className="!text-sm !h-8 !px-3"
-                  style={{
-                    backgroundColor: CONFUSION_TYPE_COLORS[type],
-                  }}
-                >
-                  {CONFUSION_TYPE_LABELS[type]}
-                </Chip>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <Card className="bg-white shadow-soft border-primary-100">
                 <CardContent className="py-5 text-center">
@@ -325,11 +354,11 @@ export default function MistakesReviewPage() {
                   </div>
                   <p className="text-xs text-primary-500 mb-1">正确率</p>
                   <p className="text-3xl font-bold text-primary-800 font-mono">
-                    {accuracy}
+                    {results.length > 0 ? Math.round((removedItems.length / results.length) * 100) : 0}
                     <span className="text-lg">%</span>
                   </p>
                   <p className="text-xs text-primary-400 mt-1">
-                    {correctCount} / {results.length} 题正确
+                    {removedItems.length} / {results.length} 题正确
                   </p>
                 </CardContent>
               </Card>
@@ -341,7 +370,7 @@ export default function MistakesReviewPage() {
                   </div>
                   <p className="text-xs text-primary-500 mb-1">已移除错题</p>
                   <p className="text-3xl font-bold text-emerald-600 font-mono">
-                    {removedCount}
+                    {removedItems.length}
                   </p>
                   <p className="text-xs text-primary-400 mt-1">
                     从错题本中清除
@@ -356,7 +385,7 @@ export default function MistakesReviewPage() {
                   </div>
                   <p className="text-xs text-primary-500 mb-1">仍需巩固</p>
                   <p className="text-3xl font-bold text-accent-600 font-mono">
-                    {results.length - correctCount}
+                    {stillWrongItems.length + notReviewedItems.length}
                   </p>
                   <p className="text-xs text-primary-400 mt-1">
                     继续留在错题本
@@ -365,72 +394,158 @@ export default function MistakesReviewPage() {
               </Card>
             </div>
 
-            {results.length > 0 && (
-              <div className="rounded-xl border border-primary-100 bg-white overflow-hidden mb-6">
-                <div className="px-4 py-3 border-b border-primary-100 bg-primary-50/50">
-                  <p className="text-sm font-semibold text-primary-700">
-                    逐题详情
-                  </p>
-                </div>
-                <div className="divide-y divide-primary-50 max-h-80 overflow-y-auto">
-                  {results.map((result, idx) => {
-                    const item = reviewItems[idx];
-                    return (
-                      <div
-                        key={result.key}
-                        className="px-4 py-3 flex items-center justify-between gap-4"
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <span
-                            className={cn(
-                              "w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold",
-                              result.isCorrect
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-red-100 text-red-700"
-                            )}
-                          >
-                            {idx + 1}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm text-primary-800 font-medium truncate">
-                              {item?.question.title}
-                            </p>
-                            <p className="text-xs text-primary-500">
-                              {item?.report.mediaName}
-                            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card className="overflow-hidden">
+                <CardHeader className="bg-emerald-50/80 border-b border-emerald-100">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <CardTitle className="text-sm text-emerald-700">
+                      已掌握 · 已移除
+                    </CardTitle>
+                    <Chip color="neutral" variant="solid" className="ml-auto !text-xs !h-6">
+                      {removedItems.length}题
+                    </Chip>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {removedItems.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-primary-400">
+                      暂无已掌握的题目
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-primary-50 max-h-72 overflow-y-auto">
+                      {removedItems.map(({ result, reviewItem }) => (
+                        <div
+                          key={result.key}
+                          className="px-3 py-2.5 hover:bg-primary-50/60 cursor-pointer transition-colors"
+                          onClick={() =>
+                            navigate(
+                              `/analysis/${reviewItem!.question.id}?reportId=${reviewItem!.report.id}`
+                            )
+                          }
+                        >
+                          <p className="text-sm text-primary-800 font-medium line-clamp-1">
+                            {reviewItem!.question.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[11px] text-primary-500">
+                              {reviewItem!.report.mediaName}
+                            </span>
+                            <TendencyTag
+                              tendency={result.correctTendency}
+                              size="sm"
+                            />
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <TendencyTag
-                            tendency={result.selectedTendency}
-                            size="sm"
-                          />
-                          <span className="text-primary-300">→</span>
-                          <TendencyTag
-                            tendency={result.correctTendency}
-                            size="sm"
-                          />
-                          {result.isCorrect ? (
-                            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                          ) : (
-                            <XCircle className="w-5 h-5 text-red-500 shrink-0" />
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/analysis/${item?.question.id}?reportId=${item?.report.id}`)}
-                          >
-                            解析
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <div className="flex items-center justify-center gap-3 flex-wrap">
+              <Card className="overflow-hidden">
+                <CardHeader className="bg-red-50/80 border-b border-red-100">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-5 h-5 text-red-500" />
+                    <CardTitle className="text-sm text-red-700">
+                      仍出错 · 待巩固
+                    </CardTitle>
+                    <Chip color="accountability" variant="solid" className="ml-auto !text-xs !h-6">
+                      {stillWrongItems.length}题
+                    </Chip>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {stillWrongItems.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-primary-400">
+                      太棒了，全部答对！
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-primary-50 max-h-72 overflow-y-auto">
+                      {stillWrongItems.map(({ result, reviewItem }) => (
+                        <div
+                          key={result.key}
+                          className="px-3 py-2.5 hover:bg-red-50/40 cursor-pointer transition-colors"
+                          onClick={() =>
+                            navigate(
+                              `/analysis/${reviewItem!.question.id}?reportId=${reviewItem!.report.id}`
+                            )
+                          }
+                        >
+                          <p className="text-sm text-primary-800 font-medium line-clamp-1">
+                            {reviewItem!.question.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[11px] text-primary-500">
+                              {reviewItem!.report.mediaName}
+                            </span>
+                            <TendencyTag
+                              tendency={result.selectedTendency}
+                              size="sm"
+                              className="border-red-200 bg-red-50"
+                            />
+                            <span className="text-primary-300 text-xs">→</span>
+                            <TendencyTag
+                              tendency={result.correctTendency}
+                              size="sm"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="overflow-hidden">
+                <CardHeader className="bg-primary-50/80 border-b border-primary-100">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-primary-500" />
+                    <CardTitle className="text-sm text-primary-700">
+                      还没重做
+                    </CardTitle>
+                    <Chip color="primary" variant="solid" className="ml-auto !text-xs !h-6">
+                      {notReviewedItems.length}题
+                    </Chip>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {notReviewedItems.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-primary-400">
+                      筛选范围内的题都做了
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-primary-50 max-h-72 overflow-y-auto">
+                      {notReviewedItems.map((item) => (
+                        <div
+                          key={item.key}
+                          className="px-3 py-2.5 hover:bg-primary-50/60 cursor-pointer transition-colors"
+                          onClick={() =>
+                            navigate(
+                              `/analysis/${item.question.id}?reportId=${item.report.id}`
+                            )
+                          }
+                        >
+                          <p className="text-sm text-primary-800 font-medium line-clamp-1">
+                            {item.question.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[11px] text-primary-500">
+                              {item.report.mediaName}
+                            </span>
+                            <span className="text-[11px] text-accent-600">
+                              错{item.errorCount}次
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 flex-wrap mt-6">
               <Button
                 variant="outline"
                 leftIcon={<Home className="w-4 h-4" />}
@@ -438,7 +553,7 @@ export default function MistakesReviewPage() {
               >
                 返回错题本
               </Button>
-              {results.length > 0 && results.some((r) => !r.isCorrect) && (
+              {stillWrongItems.length > 0 && (
                 <Button
                   variant="primary"
                   leftIcon={<PlayCircle className="w-4 h-4" />}

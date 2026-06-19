@@ -2,6 +2,7 @@ export const ANSWERS_KEY = 'mta_user_answers';
 export const STATS_KEY = 'mta_user_stats';
 export const MISTAKES_KEY = 'mta_mistakes';
 export const LAST_QUESTION_KEY = 'mta_last_question';
+export const NOTES_KEY = 'mta_study_notes';
 
 export const SafeLocalStorage = {
   get<T>(key: string, defaultValue: T): T {

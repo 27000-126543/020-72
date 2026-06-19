@@ -1,13 +1,17 @@
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Calendar, Tag, Info, MessageSquare } from "lucide-react";
-import type { MediaReport, MediaTendency, SentenceAnnotation } from "@/data/types";
+import { Calendar, Tag, Info, MessageSquare, PenLine, StickyNote } from "lucide-react";
+import type { MediaReport, MediaTendency, SentenceAnnotation, NoteRecord } from "@/data/types";
 import { TENDENCY_COLORS, TENDENCY_LABELS } from "@/data/types";
 import { cn } from "@/lib/utils";
 
 interface ReportViewerProps {
   report: MediaReport;
   showAnnotations: boolean;
+  notes?: Record<string, NoteRecord>;
+  questionId?: string;
+  selectedAnnotationId?: string | null;
+  onAnnotationClick?: (annotationId: string) => void;
 }
 
 interface SentenceSegment {
@@ -156,6 +160,10 @@ function formatDate(dateStr: string): string {
 export default function ReportViewer({
   report,
   showAnnotations,
+  notes = {},
+  questionId = "",
+  selectedAnnotationId = null,
+  onAnnotationClick,
 }: ReportViewerProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<TooltipPosition>({
@@ -167,6 +175,15 @@ export default function ReportViewer({
   const hoveredAnnotation = report.sentenceAnnotations.find(
     (a) => a.id === hoveredId
   );
+
+  const hoveredNote = hoveredAnnotation && questionId
+    ? notes[`${questionId}_${report.id}_${hoveredAnnotation.id}`]
+    : null;
+
+  const getNote = (annotationId: string): NoteRecord | undefined => {
+    if (!questionId) return undefined;
+    return notes[`${questionId}_${report.id}_${annotationId}`];
+  };
 
   const updateTooltipPosition = useCallback((el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
@@ -202,30 +219,43 @@ export default function ReportViewer({
       const ann = seg.annotation;
       const tendency = ann.tendencyLabel;
       const isHovered = hoveredId === ann.id;
+      const isSelected = selectedAnnotationId === ann.id;
+      const hasNote = !!getNote(ann.id);
 
       return (
         <span
           key={`${ann.id}-${idx}`}
           className={cn(
-            "sentence-highlight inline",
-            tendency && "rounded-sm"
+            "sentence-highlight inline cursor-pointer",
+            tendency && "rounded-sm",
+            isSelected && "ring-2 ring-accent-400 ring-offset-1"
           )}
           style={{
             backgroundColor: tendency
-              ? isHovered
+              ? isHovered || isSelected
                 ? TENDENCY_BG_HOVER[tendency]
                 : TENDENCY_BG_OPACITY[tendency]
               : undefined,
             boxDecorationBreak: "clone",
             WebkitBoxDecorationBreak: "clone",
+            borderBottom: hasNote ? "2px dashed #e07b39" : undefined,
           }}
           onMouseEnter={(e) => {
             setHoveredId(ann.id);
             updateTooltipPosition(e.currentTarget as HTMLElement);
           }}
           onMouseLeave={() => setHoveredId(null)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAnnotationClick?.(ann.id);
+          }}
         >
           {seg.text}
+          {hasNote && (
+            <span className="inline-flex items-center ml-0.5 align-super">
+              <StickyNote className="w-3 h-3 text-accent-500" />
+            </span>
+          )}
         </span>
       );
     });
@@ -284,6 +314,33 @@ export default function ReportViewer({
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {hoveredNote && (
+          <div className="border-t border-accent-200/60 pt-2.5 mt-2">
+            <p className="text-[10px] uppercase tracking-wider text-accent-500 font-semibold mb-1.5 flex items-center gap-1">
+              <StickyNote className="w-3 h-3" />
+              我的笔记
+            </p>
+            <p className="text-xs text-accent-700 leading-relaxed line-clamp-3">
+              {hoveredNote.content}
+            </p>
+          </div>
+        )}
+
+        {!hoveredNote && onAnnotationClick && (
+          <div className="border-t border-primary-100/70 pt-2 mt-2">
+            <button
+              className="text-[11px] text-accent-600 hover:text-accent-700 flex items-center gap-1 pointer-events-auto"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAnnotationClick(hoveredAnnotation.id);
+              }}
+            >
+              <PenLine className="w-3 h-3" />
+              点击添加笔记
+            </button>
           </div>
         )}
 
